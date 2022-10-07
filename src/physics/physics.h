@@ -40,5 +40,3 @@ struct Transform;
 struct Collider;
 struct SphereCollider;
 struct PlaneCollider;
-
-

@@ -4,48 +4,58 @@
 
 struct Transform
 {
-	vector3 Position;
-	vector3 Scale;
-	quaternion Rotation;
+	vector3 position;
+	vector3 scale;
+	quaternion rotation;
+};
+
+
+struct Sphere
+{
+	vector3 Center;
+	float Radius;
+};
+
+struct Plane
+{
+	vector3 Plane;
+	float Distance;
 };
 
 using CollisionCallback = std::function<void(Collision&, float)>;
+
+struct Rigidbody
+{
+	std::optional<vector3> custom_gravity;
+	vector3 force;    // Net force
+	vector3 velocity;
+
+	float mass = 10.0f;
+	bool takes_gravity = true; // If the rigidbody will take gravity from the world.
+
+	float static_friction = 0.5f;  // Static friction coefficient
+	float dynamic_friction = 0.5f; // Dynamic friction coefficient
+	float restitution = 0.1f;     // Elasticity of collisions (bounciness)
+};
 
 struct CollisionObject
 {
 	Transform transform;
 	Collider* collider;
 	bool is_trigger;
+	std::optional<Rigidbody> body;
  
 	CollisionCallback on_collision;
-
-	// return true if this is rigidbody
-	bool IsDynamic() const;
-};
-
-
-struct Rigidbody : CollisionObject
-{
-	std::optional<vector3> custom_gravity;
-	vector3 force;    // Net force
-	vector3 velocity;
- 
-	float mass = 10.0f;
-	bool takes_gravity = true; // If the rigidbody will take gravity from the world.
- 
-	float static_friction = 0.5f;  // Static friction coefficient
-	float dynamic_friction = 0.5f; // Dynamic friction coefficient
-	float restitution = 0.1f;     // Elasticity of collisions (bounciness)
 };
 
 
 struct CollisionPoints
 {
-	vector3 A; // Furthest point of A into B
-	vector3 B; // Furthest point of B into A
-	vector3 Normal; // B – A normalized
-	float Depth = 0;    // Length of B – A
-	bool HasCollision = false;
+	vector3 a; // Furthest point of a into b
+	vector3 b; // Furthest point of b into a
+	vector3 normal; // b – a normalized
+	float depth = 0;    // Length of b – a
+	bool has_collision = false;
 };
 
 struct Collision
@@ -122,7 +132,7 @@ struct CollisionWorld
  
 				CollisionPoints points = a->collider->TestCollision(a->transform, b->collider, b->transform);
  
-				if (points.HasCollision)
+				if (points.has_collision)
 				{
 					const auto any_is_trigger = a->is_trigger || b->is_trigger;
 					if (any_is_trigger)
@@ -153,20 +163,18 @@ struct DynamicsWorld : public CollisionWorld
 	{
 		for (CollisionObject* object : objects)
 		{
-			if (object->IsDynamic() == false)
+			if (!object->body)
 			{
 				continue;
 			}
 
-			Rigidbody* rigidbody = (Rigidbody*)object;
-
-			if (rigidbody->takes_gravity == false)
+			if (object->body->takes_gravity == false)
 			{
 				continue;
 			}
 
-			const auto gravity = rigidbody->custom_gravity.value_or(global_gravity);
-			rigidbody->force += gravity * rigidbody->mass;
+			const auto gravity = object->body->custom_gravity.value_or(global_gravity);
+			object->body->force += gravity * object->body->mass;
 		}
 	}
  
@@ -174,16 +182,14 @@ struct DynamicsWorld : public CollisionWorld
 	{
 		for (CollisionObject* object : objects)
 		{
-			if (!object->IsDynamic())
+			if (!object->body)
 			{
 				continue;
 			}
  
-			Rigidbody* rigidbody = (Rigidbody*)object;
- 
-			rigidbody->velocity = rigidbody->velocity + rigidbody->force / rigidbody->mass * dt;
-			rigidbody->transform.Position = rigidbody->transform.Position + rigidbody->velocity * dt;
-			rigidbody->force = {0, 0, 0};
+			object->body->velocity += object->body->force / object->body->mass * dt;
+			object->transform.position += object->body->velocity * dt;
+			object->body->force = {0, 0, 0};
 		}
 	}
  
@@ -222,8 +228,7 @@ struct SphereCollider : Collider
 	}
 };
 
-struct PlaneCollider
-	: Collider
+struct PlaneCollider : Collider
 {
 	vector3 Plane;
 	float Distance;
@@ -238,11 +243,11 @@ struct PlaneCollider
 		// reuse sphere code
 		CollisionPoints points = sphere->TestCollision(sphereTransform, this, transform);
 
-		vector3 T = points.A; // You could have an algo Plane v Sphere to do the swap
-		points.A = points.B;
-		points.B = T;
+		vector3 T = points.a; // You could have an algo Plane v Sphere to do the swap
+		points.a = points.b;
+		points.b = T;
 
-		points.Normal = -points.Normal;
+		points.normal = -points.normal;
 
 		return points;
 	}
