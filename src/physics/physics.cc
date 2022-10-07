@@ -1,5 +1,5 @@
 #include "physics.h"
-
+#include <type_traits>
 
 
 struct Transform
@@ -22,7 +22,11 @@ struct Plane
 	float Distance;
 };
 
+struct NullShape {};
+
 using CollisionCallback = std::function<void(Collision&, float)>;
+
+using Shape = std::variant<Sphere, Plane, NullShape>;
 
 struct Rigidbody
 {
@@ -41,7 +45,7 @@ struct Rigidbody
 struct CollisionObject
 {
 	Transform transform;
-	Collider* collider;
+	Shape shape = NullShape{};
 	bool is_trigger;
 	std::optional<Rigidbody> body;
  
@@ -58,6 +62,11 @@ struct CollisionPoints
 	bool has_collision = false;
 };
 
+CollisionPoints NoCollision()
+{
+	return {};
+}
+
 struct Collision
 {
     CollisionObject* a;
@@ -71,13 +80,11 @@ struct Solver
 	virtual void Solve(std::vector<Collision>& collisions, float dt) = 0;
 };
 
-struct Collider
-{
-	virtual ~Collider() = default;
-	virtual CollisionPoints TestCollision(const Transform& transform, const Collider* collider, const Transform& colliderTransform) const = 0;
-	virtual CollisionPoints TestCollision(const Transform& transform, const SphereCollider* sphere, const Transform& sphereTransform) const = 0;
-	virtual CollisionPoints TestCollision(const Transform& transform, const PlaneCollider* plane, const Transform& planeTransform) const = 0;
-};
+CollisionPoints TestCollision
+(
+	const Shape& lhs_collider, const Transform& lhs_transform,
+	const Shape& rhs_collider, const Transform& rhs_transform
+);
 
 struct CollisionWorld
 {
@@ -123,14 +130,8 @@ struct CollisionWorld
 					// todo(Gustav): is this properly iteration over all objects?
 					break;
 				}
-
-				const auto both_has_collision = a->collider || b->collider;
-				if(both_has_collision == false)
-				{
-					continue;
-				}
  
-				CollisionPoints points = a->collider->TestCollision(a->transform, b->collider, b->transform);
+				CollisionPoints points = TestCollision(a->shape, a->transform, b->shape, b->transform);
  
 				if (points.has_collision)
 				{
@@ -203,45 +204,26 @@ struct DynamicsWorld : public CollisionWorld
 
 namespace algo
 {
-	CollisionPoints FindSphereSphereCollisionPoints(const SphereCollider* a, const Transform& ta, const SphereCollider* b, const Transform& tb);
-	CollisionPoints FindSpherePlaneCollisionPoints(const SphereCollider* a, const Transform& ta, const PlaneCollider* b, const Transform& tb);
+	CollisionPoints FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb);
+	CollisionPoints FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb);
 }
 
-struct SphereCollider : Collider
+namespace forwarders
 {
-	vector3 Center;
-	float Radius;
- 
-	CollisionPoints TestCollision(const Transform& transform, const Collider* collider, const Transform& colliderTransform) const override
+	CollisionPoints TestCollision(const Sphere& self, const Transform& transform, const Sphere& sphere, const Transform& sphereTransform)
 	{
-		return collider->TestCollision(colliderTransform, this, transform);
+		return algo::FindSphereSphereCollisionPoints(self, transform, sphere, sphereTransform);
 	}
- 
-	CollisionPoints TestCollision(const Transform& transform, const SphereCollider* sphere, const Transform& sphereTransform) const override
-	{
-		return algo::FindSphereSphereCollisionPoints(this, transform, sphere, sphereTransform);
-	}
- 
-	CollisionPoints TestCollision(const Transform& transform, const PlaneCollider* plane, const Transform& planeTransform) const override
-	{
-		return algo::FindSpherePlaneCollisionPoints(this, transform, plane, planeTransform);
-	}
-};
 
-struct PlaneCollider : Collider
-{
-	vector3 Plane;
-	float Distance;
- 
-	CollisionPoints TestCollision(const Transform& transform, const Collider* collider, const Transform& colliderTransform) const override
+	CollisionPoints TestCollision(const Sphere& self, const Transform& transform, const Plane& plane, const Transform& planeTransform)
 	{
-		return collider->TestCollision(colliderTransform, this, transform);
+		return algo::FindSpherePlaneCollisionPoints(self, transform, plane, planeTransform);
 	}
- 
-	CollisionPoints TestCollision(const Transform& transform, const SphereCollider* sphere, const Transform& sphereTransform) const override
+
+	CollisionPoints TestCollision(const Plane& self, const Transform& transform, const Sphere& sphere, const Transform& sphereTransform)
 	{
 		// reuse sphere code
-		CollisionPoints points = sphere->TestCollision(sphereTransform, this, transform);
+		CollisionPoints points = TestCollision(sphere, sphereTransform, self, transform);
 
 		vector3 T = points.a; // You could have an algo Plane v Sphere to do the swap
 		points.a = points.b;
@@ -251,9 +233,98 @@ struct PlaneCollider : Collider
 
 		return points;
 	}
- 
-	CollisionPoints TestCollision(const Transform& transform, const PlaneCollider* plane, const Transform& planeTransform) const override
+
+	CollisionPoints TestCollision(const Plane& self, const Transform& transform, const Plane& plane, const Transform& planeTransform)
 	{
-		return {}; // No plane v plane
+		return NoCollision();
 	}
-};
+}
+
+template<class> inline constexpr bool always_false_v = false;
+
+namespace intermediate
+{
+	CollisionPoints TestCollision
+	(
+		const Sphere& lhs_collider, const Transform& lhs_transform,
+		const Shape& rhs_collider, const Transform& rhs_transform
+	)
+	{
+		return std::visit([&](const auto& rhs) -> CollisionPoints
+			{
+				using T = std::decay_t<decltype(rhs)>;
+				if constexpr (std::is_same_v<T, Sphere>)
+				{
+					return forwarders::TestCollision(lhs_collider, lhs_transform, rhs, rhs_transform);
+				}
+				else if constexpr (std::is_same_v<T, Plane>)
+				{
+					return forwarders::TestCollision(lhs_collider, lhs_transform, rhs, rhs_transform);
+				}
+				else if constexpr (std::is_same_v<T, NullShape>)
+				{
+					return NoCollision();
+				}
+				else
+				{
+					static_assert(always_false_v<T>, "non-exhaustive visitor!");
+				}
+			}, rhs_collider);
+	}
+
+	CollisionPoints TestCollision
+	(
+		const Plane& lhs_collider, const Transform& lhs_transform,
+		const Shape& rhs_collider, const Transform& rhs_transform
+	)
+	{
+		return std::visit([&](const auto& rhs) -> CollisionPoints
+			{
+				using T = std::decay_t<decltype(rhs)>;
+				if constexpr (std::is_same_v<T, Sphere>)
+				{
+					return forwarders::TestCollision(lhs_collider, lhs_transform, rhs, rhs_transform);
+				}
+				else if constexpr (std::is_same_v<T, Plane>)
+				{
+					return forwarders::TestCollision(lhs_collider, lhs_transform, rhs, rhs_transform);
+				}
+				else if constexpr (std::is_same_v<T, NullShape>)
+				{
+					return NoCollision();
+				}
+				else
+				{
+					static_assert(always_false_v<T>, "non-exhaustive visitor!");
+				}
+			}, rhs_collider);
+	}
+}
+
+CollisionPoints TestCollision
+(
+	const Shape& lhs_collider, const Transform& lhs_transform,
+	const Shape& rhs_collider, const Transform& rhs_transform
+)
+{
+	return std::visit([&](const auto& lhs) -> CollisionPoints
+	{
+		using T = std::decay_t<decltype(lhs)>;
+		if constexpr (std::is_same_v<T, Sphere>)
+		{
+			return intermediate::TestCollision(lhs, lhs_transform, rhs_collider, rhs_transform);
+		}
+		else if constexpr (std::is_same_v<T, Plane>)
+		{
+			return intermediate::TestCollision(lhs, lhs_transform, rhs_collider, rhs_transform);
+		}
+		else if constexpr (std::is_same_v<T, NullShape>)
+		{
+			return NoCollision();
+		}
+		else
+		{
+			static_assert(always_false_v<T>, "non-exhaustive visitor!");
+		}
+	}, lhs_collider);
+}

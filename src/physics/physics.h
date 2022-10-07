@@ -3,6 +3,8 @@
 #include <vector>
 #include <functional>
 #include <optional>
+#include <variant>
+
 
 #include "glm/vec3.hpp"
 
@@ -37,6 +39,3 @@ struct DynamicsWorld;
 
 struct CollisionPoints;
 struct Transform;
-struct Collider;
-struct SphereCollider;
-struct PlaneCollider;
