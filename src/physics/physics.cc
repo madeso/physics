@@ -9,13 +9,15 @@ struct Transform
 	quaternion Rotation;
 };
 
+using CollisionCallback = std::function<void(Collision&, float)>;
+
 struct CollisionObject
 {
 	Transform transform;
 	Collider* collider;
 	bool is_trigger;
  
-	std::function<void(Collision&, float)> on_collision;
+	CollisionCallback on_collision;
 
 	// return true if this is rigidbody
 	bool IsDynamic() const;
@@ -48,8 +50,8 @@ struct CollisionPoints
 
 struct Collision
 {
-    CollisionObject* ObjA;
-    CollisionObject* ObjB;
+    CollisionObject* a;
+    CollisionObject* b;
     CollisionPoints points;
 };
 
@@ -69,38 +71,30 @@ struct Collider
 
 struct CollisionWorld
 {
-protected:
-	std::vector<CollisionObject*> m_objects;
-	std::vector<Solver*> m_solvers;
- 
-	std::function<void(Collision&, float)> m_onCollision;
- 
-public:
-	void AddCollisionObject   (CollisionObject* object);
-	void RemoveCollisionObject(CollisionObject* object);
-	void AddSolver   (Solver* solver);
-	void RemoveSolver(Solver* solver);
-	void SetCollisionCallback(std::function<void(Collision&, float)>& callback);
+	std::vector<CollisionObject*> objects;
+	std::vector<Solver*> solvers;
+	CollisionCallback on_collision;
  
 	void SolveCollisions(std::vector<Collision>& collisions, float dt)
 	{
-		for (Solver* solver : m_solvers)
+		for (Solver* solver : solvers)
 		{
 			solver->Solve(collisions, dt);
 		}
 	}
  
-	void SendCollisionCallbacks(std::vector<Collision>& collisions, float dt)
+	void SendCollisionCallbacks(std::vector<Collision>& collisions, float dt) const
 	{
+		auto call = [](const CollisionCallback& cb, Collision& collision, float dt)
+		{
+			if (cb) { cb(collision, dt); }
+		};
+
 		for (Collision& collision : collisions)
 		{
-			m_onCollision(collision, dt);
- 
-			auto& a = collision.ObjA->on_collision;
-			auto& b = collision.ObjB->on_collision;
- 
-			if (a) a(collision, dt);
-			if (b) b(collision, dt);
+			call(on_collision, collision, dt);
+			call(collision.a->on_collision, collision, dt);
+			call(collision.b->on_collision, collision, dt);
 		}
 	}
  
@@ -110,9 +104,9 @@ public:
 		std::vector<Collision> triggers;
 
 		// todo(Gustav): reduce the N*M complexity
-		for (CollisionObject* a : m_objects)
+		for (CollisionObject* a : objects)
 		{
-			for (CollisionObject* b : m_objects)
+			for (CollisionObject* b : objects)
 			{
 				if (a == b)
 				{
@@ -143,7 +137,8 @@ public:
 			}
 		}
  
-		SolveCollisions(collisions, dt); // Don't solve triggers
+		SolveCollisions(collisions, dt);
+		// Don't solve triggers
  
 		SendCollisionCallbacks(collisions, dt);
 		SendCollisionCallbacks(triggers, dt);
@@ -152,18 +147,11 @@ public:
 
 struct DynamicsWorld : public CollisionWorld
 {
-private:
 	vector3 global_gravity = vector3{ 0, -9.81f, 0 };
- 
-public:
-	void AddRigidbody(Rigidbody* rigidbody)
-	{
-		AddCollisionObject(rigidbody);
-	}
  
 	void ApplyGravity()
 	{
-		for (CollisionObject* object : m_objects)
+		for (CollisionObject* object : objects)
 		{
 			if (object->IsDynamic() == false)
 			{
@@ -184,7 +172,7 @@ public:
  
 	void MoveObjects(float dt)
 	{
-		for (CollisionObject* object : m_objects)
+		for (CollisionObject* object : objects)
 		{
 			if (!object->IsDynamic())
 			{
