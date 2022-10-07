@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <functional>
+#include <optional>
 
 #include "glm/vec3.hpp"
 
