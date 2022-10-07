@@ -2,26 +2,15 @@
 
 
 
-/*
-struct Object {
-	float Mass = 1.0f;
-	vector3 Velocity;
-	vector3 Force;
- 
-	Collider* Collider = nullptr;
-	Transform* Transform = nullptr;
-};
-*/
-
-// Object -> CollisionObject + Rigitbody
-
-struct Transform { // Describes an objects location
+struct Transform
+{
 	vector3 Position;
 	vector3 Scale;
 	quaternion Rotation;
 };
 
-struct CollisionObject {
+struct CollisionObject
+{
 protected:
 	Transform m_transform;
 	Collider* m_collider;
@@ -70,8 +59,7 @@ public:
 };
 
 
-struct Rigidbody
-	: CollisionObject
+struct Rigidbody : CollisionObject
 {
 private:
 	vector3 m_gravity;  // Gravitational acceleration
@@ -133,7 +121,8 @@ public:
 };
 
 
-struct CollisionPoints {
+struct CollisionPoints
+{
 	vector3 A; // Furthest point of A into B
 	vector3 B; // Furthest point of B into A
 	vector3 Normal; // B – A normalized
@@ -148,93 +137,22 @@ struct Collision
     CollisionPoints points;
 };
 
-struct Solver {
-public:
-	virtual void Solve(
-		std::vector<Collision>& collisions,
-		float dt) = 0;
+struct Solver
+{
+	virtual ~Solver() = default;
+	virtual void Solve(std::vector<Collision>& collisions, float dt) = 0;
 };
 
-/*
-struct PhysicsWorld {
-private:
-	std::vector<Object*> m_objects;
-    std::vector<Solver*> m_solvers;
-	vector3 m_gravity = {0, -9.81f, 0};
- 
-public:
-	void AddObject   (Object* object);
-	void RemoveObject(Object* object);
-
-    void AddSolver   (Solver* solver);
-	void RemoveSolver(Solver* solver);
- 
-	void Step(
-		float dt)
-	{
-		for (Object* obj : m_objects) {
-			obj->Force += obj->Mass * m_gravity; // apply a force
- 
-			obj->Velocity += obj->Force / obj->Mass * dt;
-			obj->Position += obj->Velocity * dt;
- 
-			obj->Force = vector3{0, 0, 0}; // reset net force at the end
-		}
-	}
-
-	void ResolveCollisions(
-		float dt)
-	{
-		std::vector<Collision> collisions;
-		for (Object* a : m_objects) {
-			for (Object* b : m_objects) {
-				if (a == b) break;
- 
-				if (    !a->Collider
-					|| !b->Collider)
-				{
-					continue;
-				}
- 
-				CollisionPoints points = a->Collider->TestCollision(
-					a->Transform,
-					b->Collider,
-					b->Transform);
- 
-				if (points.HasCollision) {
-					collisions.emplace_back(a, b, points);
-				}
-			}
-		}
- 
-		// Solve collisions
-        for (Solver* solver : m_solvers) {
-			solver->Solve(collisions, dt);
-		}
-	}
-};
-*/
-
-// PhysicsWorld -> CollisionWorld + DynamicsWorld
-
-struct Collider {
-	virtual CollisionPoints TestCollision(
-		const Transform* transform,
-		const Collider* collider,
-		const Transform* colliderTransform) const = 0;
-
-	virtual CollisionPoints TestCollision(
-		const Transform* transform,
-		const SphereCollider* sphere,
-		const Transform* sphereTransform) const = 0;
-
-	virtual CollisionPoints TestCollision(
-		const Transform* transform,
-		const PlaneCollider* plane,
-		const Transform* planeTransform) const = 0;
+struct Collider
+{
+	virtual ~Collider() = default;
+	virtual CollisionPoints TestCollision(const Transform* transform, const Collider* collider, const Transform* colliderTransform) const = 0;
+	virtual CollisionPoints TestCollision(const Transform* transform, const SphereCollider* sphere, const Transform* sphereTransform) const = 0;
+	virtual CollisionPoints TestCollision(const Transform* transform, const PlaneCollider* plane, const Transform* planeTransform) const = 0;
 };
 
-struct CollisionWorld {
+struct CollisionWorld
+{
 protected:
 	std::vector<CollisionObject*> m_objects;
 	std::vector<Solver*> m_solvers;
@@ -242,28 +160,24 @@ protected:
 	std::function<void(Collision&, float)> m_onCollision;
  
 public:
-	void AddCollisionObject   (CollisionObject* object) { /* ... */ }
-	void RemoveCollisionObject(CollisionObject* object) { /* ... */ }
+	void AddCollisionObject   (CollisionObject* object);
+	void RemoveCollisionObject(CollisionObject* object);
+	void AddSolver   (Solver* solver);
+	void RemoveSolver(Solver* solver);
+	void SetCollisionCallback(std::function<void(Collision&, float)>& callback);
  
-	void AddSolver   (Solver* solver) { /* ... */ }
-	void RemoveSolver(Solver* solver) { /* ... */ }
- 
-	void SetCollisionCallback(std::function<void(Collision&, float)>& callback) { /* ... */ }
- 
-	void SolveCollisions(
-		std::vector<Collision>& collisions,
-		float dt)
+	void SolveCollisions(std::vector<Collision>& collisions, float dt)
 	{
-		for (Solver* solver : m_solvers) {
+		for (Solver* solver : m_solvers)
+		{
 			solver->Solve(collisions, dt);
 		}
 	}
  
-	void SendCollisionCallbacks(
-		std::vector<Collision>& collisions,
-		float dt)
+	void SendCollisionCallbacks(std::vector<Collision>& collisions, float dt)
 	{
-		for (Collision& collision : collisions) {
+		for (Collision& collision : collisions)
+		{
 			m_onCollision(collision, dt);
  
 			auto& a = collision.ObjA->OnCollision();
@@ -274,34 +188,39 @@ public:
 		}
 	}
  
-	void ResolveCollisions(
-		float dt)
+	void ResolveCollisions(float dt)
 	{
 		std::vector<Collision> collisions;
 		std::vector<Collision> triggers;
-		for (CollisionObject* a : m_objects) {
-			for (CollisionObject* b : m_objects) {
-				if (a == b) break;
- 
-				if (    !a->Col()
-					|| !b->Col())
+
+		// todo(Gustav): reduce the N*M complexity
+		for (CollisionObject* a : m_objects)
+		{
+			for (CollisionObject* b : m_objects)
+			{
+				if (a == b)
+				{
+					// todo(Gustav): is this properly iteration over all objects?
+					break;
+				}
+
+				const auto both_has_collision = a->Col() || b->Col();
+				if(both_has_collision == false)
 				{
 					continue;
 				}
  
-				CollisionPoints points = a->Col()->TestCollision(
-					a->Trans(),
-					b->Col(),
-					b->Trans());
+				CollisionPoints points = a->Col()->TestCollision( a->Trans(), b->Col(), b->Trans());
  
-				if (points.HasCollision) {
-					if (    a->IsTrigger()
-						|| b->IsTrigger())
+				if (points.HasCollision)
+				{
+					const auto any_is_trigger = a->IsTrigger() || b->IsTrigger();
+					if (any_is_trigger)
 					{
 						triggers.emplace_back(Collision{a, b, points});
 					}
- 
-					else {
+					else
+					{
 						collisions.emplace_back(Collision{a, b, points});
 					}
 				}
@@ -315,8 +234,7 @@ public:
 	}
 };
 
-struct DynamicsWorld
-	: public CollisionWorld
+struct DynamicsWorld : public CollisionWorld
 {
 private:
 	vector3 m_gravity = vector3{ 0, -9.81f, 0 };
@@ -324,16 +242,22 @@ private:
 public:
 	void AddRigidbody(Rigidbody* rigidbody)
 	{
-		if (rigidbody->TakesGravity()) {
+		if (rigidbody->TakesGravity())
+		{
 			rigidbody->SetGravity(m_gravity);
 		}
  
 		AddCollisionObject(rigidbody);
 	}
  
-	void ApplyGravity() {
-		for (CollisionObject* object : m_objects) {
-			if (!object->IsDynamic()) continue;
+	void ApplyGravity()
+	{
+		for (CollisionObject* object : m_objects)
+		{
+			if (!object->IsDynamic())
+			{
+				continue;
+			}
  
 			Rigidbody* rigidbody = (Rigidbody*)object;
 			rigidbody->ApplyForce(rigidbody->Gravity() * rigidbody->Mass());
@@ -342,20 +266,20 @@ public:
  
 	void MoveObjects(float dt)
 	{
-		for (CollisionObject* object : m_objects) {
-			if (!object->IsDynamic()) continue;
+		for (CollisionObject* object : m_objects)
+		{
+			if (!object->IsDynamic())
+			{
+				continue;
+			}
  
 			Rigidbody* rigidbody = (Rigidbody*)object;
  
-			vector3 vel = rigidbody->Velocity()
-					  + rigidbody->Force() / rigidbody->Mass()
-					  * dt;
+			vector3 vel = rigidbody->Velocity() + rigidbody->Force() / rigidbody->Mass() * dt;
  
 			rigidbody->SetVelocity(vel);
 
-			vector3 pos = rigidbody->Position()
-					  + rigidbody->Velocity()
-					  * dt;
+			vector3 pos = rigidbody->Position() + rigidbody->Velocity() * dt;
  
 			rigidbody->SetPosition(pos);
  
@@ -371,47 +295,30 @@ public:
 	}
 };
 
-namespace algo {
-	CollisionPoints FindSphereSphereCollisionPoints(
-		const SphereCollider* a, const Transform* ta,
-		const SphereCollider* b, const Transform* tb);
- 
- 
-	CollisionPoints FindSpherePlaneCollisionPoints(
-		const SphereCollider* a, const Transform* ta,
-		const PlaneCollider* b, const Transform* tb);
+namespace algo
+{
+	CollisionPoints FindSphereSphereCollisionPoints(const SphereCollider* a, const Transform* ta, const SphereCollider* b, const Transform* tb);
+	CollisionPoints FindSpherePlaneCollisionPoints(const SphereCollider* a, const Transform* ta, const PlaneCollider* b, const Transform* tb);
 }
 
-struct SphereCollider
-	: Collider
+struct SphereCollider : Collider
 {
 	vector3 Center;
 	float Radius;
  
-	CollisionPoints TestCollision(
-		const Transform* transform,
-		const Collider* collider,
-		const Transform* colliderTransform) const override
+	CollisionPoints TestCollision( const Transform* transform, const Collider* collider, const Transform* colliderTransform) const override
 	{
 		return collider->TestCollision(colliderTransform, this, transform);
 	}
  
-	CollisionPoints TestCollision(
-		const Transform* transform,
-		const SphereCollider* sphere,
-		const Transform* sphereTransform) const override
+	CollisionPoints TestCollision( const Transform* transform, const SphereCollider* sphere, const Transform* sphereTransform) const override
 	{
-		return algo::FindSphereSphereCollisionPoints(
-			this, transform, sphere, sphereTransform);
+		return algo::FindSphereSphereCollisionPoints( this, transform, sphere, sphereTransform);
 	}
  
-	CollisionPoints TestCollision(
-		const Transform* transform,
-		const PlaneCollider* plane,
-		const Transform* planeTransform) const override
+	CollisionPoints TestCollision( const Transform* transform, const PlaneCollider* plane, const Transform* planeTransform) const override
 	{
-		return algo::FindSpherePlaneCollisionPoints(
-			this, transform, plane, planeTransform);
+		return algo::FindSpherePlaneCollisionPoints( this, transform, plane, planeTransform);
 	}
 };
 
@@ -421,32 +328,20 @@ struct PlaneCollider
 	vector3 Plane;
 	float Distance;
  
-	CollisionPoints TestCollision(
-		const Transform* transform,
-		const Collider* collider,
-		const Transform* colliderTransform) const override
+	CollisionPoints TestCollision( const Transform* transform, const Collider* collider, const Transform* colliderTransform) const override
 	{
 		return collider->TestCollision(colliderTransform, this, transform);
 	}
  
-	CollisionPoints TestCollision(
-		const Transform* transform,
-		const SphereCollider* sphere,
-		const Transform* sphereTransform) const override;
+	CollisionPoints TestCollision( const Transform* transform, const SphereCollider* sphere, const Transform* sphereTransform) const override;
  
-	CollisionPoints TestCollision(
-		const Transform* transform,
-		const PlaneCollider* plane,
-		const Transform* planeTransform) const override
+	CollisionPoints TestCollision( const Transform* transform, const PlaneCollider* plane, const Transform* planeTransform) const override
 	{
 		return {}; // No plane v plane
 	}
 };
 
-CollisionPoints PlaneCollider::TestCollision(
-	const Transform* transform,
-	const SphereCollider* sphere,
-	const Transform* sphereTransform) const
+CollisionPoints PlaneCollider::TestCollision(const Transform* transform, const SphereCollider* sphere, const Transform* sphereTransform) const
 {
 	// reuse sphere code
 	CollisionPoints points = sphere->TestCollision(sphereTransform, this, transform);
