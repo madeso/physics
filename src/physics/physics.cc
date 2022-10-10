@@ -5,7 +5,7 @@
 struct Transform
 {
 	vector3 position;
-	vector3 scale;
+	float scale;
 	quaternion rotation;
 };
 
@@ -30,6 +30,7 @@ using Shape = std::variant<Sphere, Plane, NullShape>;
 
 struct Rigidbody
 {
+	bool is_simulated = true;
 	std::optional<vector3> custom_gravity;
 	vector3 force;    // Net force
 	vector3 velocity;
@@ -204,8 +205,67 @@ struct DynamicsWorld : public CollisionWorld
 
 namespace algo
 {
-	CollisionPoints FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb);
-	CollisionPoints FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb);
+	CollisionPoints FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb)
+	{
+		vector3 A = a.Center + ta.position;
+		vector3 B = b.Center + tb.position;
+
+		float Ar = a.Radius * ta.scale;
+		float Br = b.Radius * tb.scale;
+
+		vector3 AtoB = B - A;
+		vector3 BtoA = A - B;
+
+		if (glm::length(AtoB) > Ar + Br)
+		{
+			return NoCollision();
+		}
+
+		A += glm::normalize(AtoB) * Ar;
+		B += glm::normalize(BtoA) * Br;
+
+		AtoB = B - A;
+
+		return
+		{
+			A, B,
+			glm::normalize(AtoB),
+			glm::length(AtoB),
+			true
+		};
+	}
+
+	CollisionPoints FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb)
+	{
+		vector3 A  = a.Center + ta.position;
+		float Ar = a.Radius * ta.scale;
+
+		vector3 N = b.Plane * tb.rotation;
+		N = glm::normalize(N);
+		
+		vector3 P = N * b.Distance + tb.position;
+
+		// distance from center of sphere to plane surface
+		float d = glm::dot(A - P, N);
+
+		if (d > Ar)
+		{
+			return NoCollision();
+		}
+		
+		vector3 B = A - N * d;
+		A = A - N * Ar;
+
+		vector3 AtoB = B - A;
+
+		return
+		{
+			A, B,
+			glm::normalize(AtoB),
+			glm::length(AtoB),
+			true
+		};
+	}
 }
 
 namespace forwarders
@@ -328,3 +388,106 @@ CollisionPoints TestCollision
 		}
 	}, lhs_collider);
 }
+
+
+struct ImpulseSolver : Solver
+{
+	void Solve(std::vector<Collision>& collisions, float dt) override
+	{
+		for (Collision& coll : collisions)
+		{
+			// Replaces non dynamic objects with default values.
+
+			auto& aBody = coll.a->body;
+			auto& bBody = coll.b->body;
+
+			glm::vec3 aVel = aBody ? aBody->velocity : glm::vec3(0.0f);
+			glm::vec3 bVel = bBody ? bBody->velocity : glm::vec3(0.0f);
+			glm::vec3 rVel = bVel - aVel;
+			float  nSpd = glm::dot(rVel, coll.points.normal);
+
+			float aInvMass = aBody ? (1.0f/aBody->mass): 1.0f;
+			float bInvMass = bBody ? (1.0f/bBody->mass): 1.0f;
+
+			// Impluse
+
+			// This is important for convergence
+			// a negitive impulse would drive the objects closer together
+			if (nSpd >= 0)
+				continue;
+
+			float e = (aBody ? aBody->restitution : 1.0f)
+				* (bBody ? bBody->restitution : 1.0f);
+
+			float j = -(1.0f + e) * nSpd / (aInvMass + bInvMass);
+
+			glm::vec3 impluse = j * coll.points.normal;
+
+			if (aBody ? aBody->is_simulated : false) {
+				aVel -= impluse * aInvMass;
+			}
+
+			if (bBody ? bBody->is_simulated : false) {
+				bVel += impluse * bInvMass;
+			}
+
+			// Friction
+
+			rVel = bVel - aVel;
+			nSpd = glm::dot(rVel, coll.points.normal);
+
+			glm::vec3 tangent = rVel - nSpd * coll.points.normal;
+
+			if (glm::length(tangent) > 0.0001f) { // safe normalize
+				tangent = glm::normalize(tangent);
+			}
+
+			float fVel = glm::dot(rVel, tangent);
+
+			float aSF = aBody ? aBody->static_friction : 0.0f;
+			float bSF = bBody ? bBody->static_friction : 0.0f;
+			float aDF = aBody ? aBody->dynamic_friction : 0.0f;
+			float bDF = bBody ? bBody->dynamic_friction : 0.0f;
+			float mu = (float)glm::vec2(aSF, bSF).length();
+
+			float f = -fVel / (aInvMass + bInvMass);
+
+			glm::vec3 friction;
+			if (abs(f) < j * mu) {
+				friction = f * tangent;
+			}
+
+			else {
+				mu = glm::length(glm::vec2(aDF, bDF));
+				friction = -j * tangent * mu;
+			}
+
+			if (aBody ? aBody->is_simulated : false) {
+				aBody->velocity = aVel - friction * aInvMass;
+			}
+
+			if (bBody ? bBody->is_simulated : false) {
+				bBody->velocity = bVel + friction * bInvMass;
+			}
+		}
+	}
+};
+
+struct PositionSolver : Solver
+{
+	void Solve(std::vector<Collision>& manifolds, float dt) override
+	{
+		for (Collision& coll : manifolds) {
+			CollisionObject* aBody = coll.a;
+			CollisionObject* bBody = coll.b;
+
+			float aStatic = aBody->body.has_value() ? 1.0f : 0.0f;
+			float bStatic = bBody->body.has_value() ? 1.0f : 0.0f;
+
+			auto resolution = coll.points.normal * coll.points.depth / std::max(1.0f, aStatic + bStatic);
+
+			aBody->transform.position -= resolution * (1.0f - aStatic);
+			bBody->transform.position += resolution * (1.0f - bStatic);
+		}
+	}
+};

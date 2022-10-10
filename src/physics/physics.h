@@ -7,6 +7,9 @@
 
 
 #include "glm/vec3.hpp"
+#include "glm/vec4.hpp"
+#include "glm/gtc/quaternion.hpp"
+#include "glm/gtx/quaternion.hpp"
 
 /*
 // struct with 3 floats for x, y, z or i + j + k
@@ -16,10 +19,7 @@ struct vector3
 };
 */
 
-struct quaternion
-{
-    float x, y, z, w = 0.0f;
-};
+using quaternion = glm::quat;
 
 
 using vector3 = glm::vec3;
