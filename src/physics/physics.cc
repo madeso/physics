@@ -12,14 +12,14 @@ struct Transform
 
 struct Sphere
 {
-	vector3 Center;
-	float Radius;
+	vector3 center;
+	float radius;
 };
 
 struct Plane
 {
-	vector3 Plane;
-	float Distance;
+	vector3 normal;
+	float distance;
 };
 
 struct NullShape {};
@@ -207,11 +207,11 @@ namespace algo
 {
 	CollisionPoints FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb)
 	{
-		vector3 A = a.Center + ta.position;
-		vector3 B = b.Center + tb.position;
+		vector3 A = a.center + ta.position;
+		vector3 B = b.center + tb.position;
 
-		float Ar = a.Radius * ta.scale;
-		float Br = b.Radius * tb.scale;
+		float Ar = a.radius * ta.scale;
+		float Br = b.radius * tb.scale;
 
 		vector3 AtoB = B - A;
 		vector3 BtoA = A - B;
@@ -237,13 +237,13 @@ namespace algo
 
 	CollisionPoints FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb)
 	{
-		vector3 A  = a.Center + ta.position;
-		float Ar = a.Radius * ta.scale;
+		vector3 A  = a.center + ta.position;
+		float Ar = a.radius * ta.scale;
 
-		vector3 N = b.Plane * tb.rotation;
+		vector3 N = b.normal * tb.rotation;
 		N = glm::normalize(N);
 		
-		vector3 P = N * b.Distance + tb.position;
+		vector3 P = N * b.distance + tb.position;
 
 		// distance from center of sphere to plane surface
 		float d = glm::dot(A - P, N);
