@@ -31,7 +31,6 @@ struct Rigidbody;
 
 
 struct Collision;
-struct Solver;
 
 // PhysicsWorld -> CollisionWorld + DynamicsWorld
 struct CollisionWorld;
