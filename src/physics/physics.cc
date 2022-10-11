@@ -78,7 +78,19 @@ struct Collision
 struct Solver
 {
 	virtual ~Solver() = default;
-	virtual void Solve(std::vector<Collision>& collisions, float dt) = 0;
+	virtual void Solve(std::vector<Collision>& collisions, float dt) const = 0;
+};
+
+struct CollisionWorld
+{
+	std::vector<CollisionObject*> objects;
+	std::vector<Solver*> solvers;
+	CollisionCallback on_collision;
+};
+
+struct DynamicsWorld : public CollisionWorld
+{
+	vector3 global_gravity = vector3{ 0, -9.81f, 0 };
 };
 
 CollisionPoints TestCollision
@@ -86,122 +98,110 @@ CollisionPoints TestCollision
 	const Shape& lhs_collider, const Transform& lhs_transform,
 	const Shape& rhs_collider, const Transform& rhs_transform
 );
-
-struct CollisionWorld
+ 
+void SolveCollisions(const CollisionWorld& world, std::vector<Collision>& collisions, float dt)
 {
-	std::vector<CollisionObject*> objects;
-	std::vector<Solver*> solvers;
-	CollisionCallback on_collision;
- 
-	void SolveCollisions(std::vector<Collision>& collisions, float dt)
+	for (Solver* solver : world.solvers)
 	{
-		for (Solver* solver : solvers)
-		{
-			solver->Solve(collisions, dt);
-		}
+		solver->Solve(collisions, dt);
 	}
- 
-	void SendCollisionCallbacks(std::vector<Collision>& collisions, float dt) const
-	{
-		auto call = [](const CollisionCallback& cb, Collision& collision, float dt)
-		{
-			if (cb) { cb(collision, dt); }
-		};
+}
 
-		for (Collision& collision : collisions)
-		{
-			call(on_collision, collision, dt);
-			call(collision.a->on_collision, collision, dt);
-			call(collision.b->on_collision, collision, dt);
-		}
+void SendCollisionCallbacks(const CollisionWorld& world, std::vector<Collision>& collisions, float dt)
+{
+	auto call = [](const CollisionCallback& cb, Collision& collision, float dt)
+	{
+		if (cb) { cb(collision, dt); }
+	};
+
+	for (Collision& collision : collisions)
+	{
+		call(world.on_collision, collision, dt);
+		call(collision.a->on_collision, collision, dt);
+		call(collision.b->on_collision, collision, dt);
 	}
- 
-	void ResolveCollisions(float dt)
-	{
-		std::vector<Collision> collisions;
-		std::vector<Collision> triggers;
+}
 
-		// todo(Gustav): reduce the N*M complexity
-		for (CollisionObject* a : objects)
+void ResolveCollisions(CollisionWorld* world, float dt)
+{
+	std::vector<Collision> collisions;
+	std::vector<Collision> triggers;
+
+	// todo(Gustav): reduce the N*M complexity
+	for (CollisionObject* a : world->objects)
+	{
+		for (CollisionObject* b : world->objects)
 		{
-			for (CollisionObject* b : objects)
+			if (a == b)
 			{
-				if (a == b)
+				// todo(Gustav): is this properly iteration over all objects?
+				break;
+			}
+
+			CollisionPoints points = TestCollision(a->shape, a->transform, b->shape, b->transform);
+
+			if (points.has_collision)
+			{
+				const auto any_is_trigger = a->is_trigger || b->is_trigger;
+				if (any_is_trigger)
 				{
-					// todo(Gustav): is this properly iteration over all objects?
-					break;
+					triggers.emplace_back(Collision{a, b, points});
 				}
- 
-				CollisionPoints points = TestCollision(a->shape, a->transform, b->shape, b->transform);
- 
-				if (points.has_collision)
+				else
 				{
-					const auto any_is_trigger = a->is_trigger || b->is_trigger;
-					if (any_is_trigger)
-					{
-						triggers.emplace_back(Collision{a, b, points});
-					}
-					else
-					{
-						collisions.emplace_back(Collision{a, b, points});
-					}
+					collisions.emplace_back(Collision{a, b, points});
 				}
 			}
 		}
- 
-		SolveCollisions(collisions, dt);
-		// Don't solve triggers
- 
-		SendCollisionCallbacks(collisions, dt);
-		SendCollisionCallbacks(triggers, dt);
 	}
-};
 
-struct DynamicsWorld : public CollisionWorld
+	SolveCollisions(*world, collisions, dt);
+	// Don't solve triggers
+
+	SendCollisionCallbacks(*world, collisions, dt);
+	SendCollisionCallbacks(*world, triggers, dt);
+}
+ 
+void ApplyGravity(DynamicsWorld* world)
 {
-	vector3 global_gravity = vector3{ 0, -9.81f, 0 };
- 
-	void ApplyGravity()
+	for (CollisionObject* object : world->objects)
 	{
-		for (CollisionObject* object : objects)
+		if (!object->body)
 		{
-			if (!object->body)
-			{
-				continue;
-			}
-
-			if (object->body->takes_gravity == false)
-			{
-				continue;
-			}
-
-			const auto gravity = object->body->custom_gravity.value_or(global_gravity);
-			object->body->force += gravity * object->body->mass;
+			continue;
 		}
-	}
- 
-	void MoveObjects(float dt)
-	{
-		for (CollisionObject* object : objects)
+
+		if (object->body->takes_gravity == false)
 		{
-			if (!object->body)
-			{
-				continue;
-			}
- 
-			object->body->velocity += object->body->force / object->body->mass * dt;
-			object->transform.position += object->body->velocity * dt;
-			object->body->force = {0, 0, 0};
+			continue;
 		}
+
+		const auto gravity = object->body->custom_gravity.value_or(world->global_gravity);
+		object->body->force += gravity * object->body->mass;
 	}
- 
-	void Step(float dt)
+}
+
+void MoveObjects(DynamicsWorld* world, float dt)
+{
+	for (CollisionObject* object : world->objects)
 	{
-		ApplyGravity();
-		ResolveCollisions(dt);
-		MoveObjects(dt);
+		if (!object->body)
+		{
+			continue;
+		}
+
+		object->body->velocity += object->body->force / object->body->mass * dt;
+		object->transform.position += object->body->velocity * dt;
+		object->body->force = {0, 0, 0};
 	}
-};
+}
+
+void Step(DynamicsWorld* world, float dt)
+{
+	ApplyGravity(world);
+	ResolveCollisions(world, dt);
+	MoveObjects(world, dt);
+}
 
 namespace algo
 {
@@ -392,7 +392,7 @@ CollisionPoints TestCollision
 
 struct ImpulseSolver : Solver
 {
-	void Solve(std::vector<Collision>& collisions, float dt) override
+	void Solve(std::vector<Collision>& collisions, float dt) const override
 	{
 		for (Collision& coll : collisions)
 		{
@@ -453,7 +453,7 @@ struct ImpulseSolver : Solver
 			float f = -fVel / (aInvMass + bInvMass);
 
 			glm::vec3 friction;
-			if (abs(f) < j * mu) {
+			if (std::abs(f) < j * mu) {
 				friction = f * tangent;
 			}
 
@@ -475,7 +475,7 @@ struct ImpulseSolver : Solver
 
 struct PositionSolver : Solver
 {
-	void Solve(std::vector<Collision>& manifolds, float dt) override
+	void Solve(std::vector<Collision>& manifolds, float dt) const override
 	{
 		for (Collision& coll : manifolds) {
 			CollisionObject* aBody = coll.a;
