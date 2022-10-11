@@ -82,6 +82,7 @@ struct CollisionPoints
 	bool has_collision = false;
 };
 
+CollisionPoints CreateCollision(const vector3& a, const vector3& b);
 CollisionPoints NoCollision();
 
 struct Collision
@@ -92,23 +93,23 @@ struct Collision
 };
 
 using Solver = std::function<void (std::vector<Collision>&, float)>;
+void ImpulseSolver(std::vector<Collision>& collisions, float dt);
+void PositionSolver(std::vector<Collision>& collisions, float dt);
 
-struct CollisionWorld
+
+struct World
 {
 	std::vector<CollisionObject*> objects;
 	std::vector<Solver> solvers;
 	CollisionCallback on_collision;
+
+    bool apply_gravity = true;
+    vector3 global_gravity = vector3{ 0, -9.81f, 0 };
 };
 
-struct DynamicsWorld : public CollisionWorld
-{
-	vector3 global_gravity = vector3{ 0, -9.81f, 0 };
-};
 
 
+void Step(World* world, float dt);
 
-void Step(DynamicsWorld* world, float dt);
-void ImpulseSolver(std::vector<Collision>& collisions, float dt);
-void PositionSolver(std::vector<Collision>& collisions, float dt);
 
 }

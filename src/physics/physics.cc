@@ -10,38 +10,37 @@ CollisionPoints NoCollision()
 	return {};
 }
 
-
 CollisionPoints TestCollision
 (
 	const Shape& lhs_collider, const Transform& lhs_transform,
 	const Shape& rhs_collider, const Transform& rhs_transform
 );
  
-void SolveCollisions(const CollisionWorld& world, std::vector<Collision>& collisions, float dt)
+void ResolveCollisions(World* world, float dt)
 {
-	for (const Solver& solve : world.solvers)
+	auto SolveCollisions = [](const World& world, std::vector<Collision>& collisions, float dt)
 	{
-		solve(collisions, dt);
-	}
-}
-
-void SendCollisionCallbacks(const CollisionWorld& world, std::vector<Collision>& collisions, float dt)
-{
-	auto call = [](const CollisionCallback& cb, Collision& collision, float dt)
-	{
-		if (cb) { cb(collision, dt); }
+		for (const Solver& solve : world.solvers)
+		{
+			solve(collisions, dt);
+		}
 	};
 
-	for (Collision& collision : collisions)
+	auto SendCollisionCallbacks = [](const World& world, std::vector<Collision>& collisions, float dt)
 	{
-		call(world.on_collision, collision, dt);
-		call(collision.a->on_collision, collision, dt);
-		call(collision.b->on_collision, collision, dt);
-	}
-}
+		auto call = [](const CollisionCallback& cb, Collision& collision, float dt)
+		{
+			if (cb) { cb(collision, dt); }
+		};
 
-void ResolveCollisions(CollisionWorld* world, float dt)
-{
+		for (Collision& collision : collisions)
+		{
+			call(world.on_collision, collision, dt);
+			call(collision.a->on_collision, collision, dt);
+			call(collision.b->on_collision, collision, dt);
+		}
+	};
+
 	std::vector<Collision> collisions;
 	std::vector<Collision> triggers;
 
@@ -80,8 +79,13 @@ void ResolveCollisions(CollisionWorld* world, float dt)
 	SendCollisionCallbacks(*world, triggers, dt);
 }
  
-void ApplyGravity(DynamicsWorld* world)
+void ApplyGravity(World* world)
 {
+	if(world->apply_gravity == false)
+	{
+		return;
+	}
+
 	for (CollisionObject* object : world->objects)
 	{
 		if (!object->body)
@@ -99,7 +103,7 @@ void ApplyGravity(DynamicsWorld* world)
 	}
 }
 
-void MoveObjects(DynamicsWorld* world, float dt)
+void MoveObjects(World* world, float dt)
 {
 	for (CollisionObject* object : world->objects)
 	{
@@ -114,75 +118,70 @@ void MoveObjects(DynamicsWorld* world, float dt)
 	}
 }
 
-void Step(DynamicsWorld* world, float dt)
+void Step(World* world, float dt)
 {
 	ApplyGravity(world);
 	ResolveCollisions(world, dt);
 	MoveObjects(world, dt);
 }
 
+CollisionPoints CreateCollision(const vector3& A, const vector3& B)
+{
+	const auto AtoB = B - A;
+	const auto len = glm::length(AtoB);
+
+	return
+	{
+		A, B,
+		AtoB / len,
+		len,
+		true
+	};
+}
+
 namespace algo
 {
 	CollisionPoints FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb)
 	{
-		vector3 A = a.center + ta.position;
-		vector3 B = b.center + tb.position;
+		const vector3 A = a.center + ta.position;
+		const vector3 B = b.center + tb.position;
 
-		float Ar = a.radius * ta.scale;
-		float Br = b.radius * tb.scale;
+		const float Ar = a.radius * ta.scale;
+		const float Br = b.radius * tb.scale;
 
-		vector3 AtoB = B - A;
-		vector3 BtoA = A - B;
+		const vector3 AtoB = B - A;
 
 		if (glm::length(AtoB) > Ar + Br)
 		{
 			return NoCollision();
 		}
 
-		A += glm::normalize(AtoB) * Ar;
-		B += glm::normalize(BtoA) * Br;
+		const vector3 BtoA = A - B;
+		const auto nA = A + glm::normalize(AtoB) * Ar;
+		const auto nB = B + glm::normalize(BtoA) * Br;
 
-		AtoB = B - A;
-
-		return
-		{
-			A, B,
-			glm::normalize(AtoB),
-			glm::length(AtoB),
-			true
-		};
+		return CreateCollision(nA, nB);
 	}
 
 	CollisionPoints FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb)
 	{
-		vector3 A  = a.center + ta.position;
-		float Ar = a.radius * ta.scale;
-
-		vector3 N = b.normal * tb.rotation;
-		N = glm::normalize(N);
-		
-		vector3 P = N * b.distance + tb.position;
+		const auto A  = a.center + ta.position;
+		const auto Ar = a.radius * ta.scale;
+		const auto N = glm::normalize(b.normal * tb.rotation);
+		const auto P = N * b.distance + tb.position;
 
 		// distance from center of sphere to plane surface
-		float d = glm::dot(A - P, N);
+		const float d = glm::dot(A - P, N);
 
 		if (d > Ar)
 		{
 			return NoCollision();
 		}
 		
-		vector3 B = A - N * d;
-		A = A - N * Ar;
+		const auto B = A - N * d;
+		const auto Ac = A - N * Ar;
 
-		vector3 AtoB = B - A;
-
-		return
-		{
-			A, B,
-			glm::normalize(AtoB),
-			glm::length(AtoB),
-			true
-		};
+		return CreateCollision(Ac, B);
 	}
 }
 
