@@ -1,16 +1,19 @@
 #include "raylib.h"
 
+#include "physics/physics.h"
+
+
 int main(void)
 {
     const int screenWidth = 800;
     const int screenHeight = 450;
 
-    InitWindow(screenWidth, screenHeight, "raylib [models] example - geometric shapes");
+    InitWindow(screenWidth, screenHeight, "physics demo");
 
-    Camera camera = { 0 };
-    camera.position = (Vector3){ 0.0f, 10.0f, 10.0f };
-    camera.target = (Vector3){ 0.0f, 0.0f, 0.0f };
-    camera.up = (Vector3){ 0.0f, 1.0f, 0.0f };
+    Camera camera;
+    camera.position = { 0.0f, 10.0f, 10.0f };
+    camera.target = { 0.0f, 0.0f, 0.0f };
+    camera.up = { 0.0f, 1.0f, 0.0f };
     camera.fovy = 45.0f;
     camera.projection = CAMERA_PERSPECTIVE;
 

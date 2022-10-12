@@ -12,3 +12,4 @@ target_link_libraries(physics PUBLIC external::glm)
 
 target_compile_features(physics PUBLIC cxx_std_17)
 set_target_properties(physics PROPERTIES CXX_EXTENSIONS OFF)
+add_library(physics::physics ALIAS physics)
