@@ -61,8 +61,8 @@ struct Rigidbody
 using Shape = std::variant<Sphere, Plane, NullShape>;
 
 
-struct Collision;
-using CollisionCallback = std::function<void(Collision&, float)>;
+struct CollisionBetween;
+using OnCollision = std::function<void(CollisionBetween&, float)>;
 
 struct Object
 {
@@ -70,10 +70,10 @@ struct Object
 	Shape shape = NullShape{};
 	bool is_trigger;
 	std::optional<Rigidbody> body; 
-	CollisionCallback on_collision;
+	OnCollision on_collision;
 };
 
-struct CollisionPoints
+struct Collision
 {
 	vector3 a; // Furthest point of a into b
 	vector3 b; // Furthest point of b into a
@@ -82,26 +82,26 @@ struct CollisionPoints
 	bool has_collision = false;
 };
 
-CollisionPoints CreateCollision(const vector3& a, const vector3& b);
-CollisionPoints NoCollision();
+Collision CreateCollision(const vector3& a, const vector3& b);
+Collision NoCollision();
 
-struct Collision
+struct CollisionBetween
 {
     Object* a;
     Object* b;
-    CollisionPoints points;
+    Collision collision;
 };
 
-using Solver = std::function<void (std::vector<Collision>&, float)>;
-void ImpulseSolver(std::vector<Collision>& collisions, float dt);
-void PositionSolver(std::vector<Collision>& collisions, float dt);
+using Solver = std::function<void (std::vector<CollisionBetween>&, float)>;
+void ImpulseSolver(std::vector<CollisionBetween>& collisions, float dt);
+void PositionSolver(std::vector<CollisionBetween>& collisions, float dt);
 
 
 struct World
 {
 	std::vector<Object*> objects;
 	std::vector<Solver> solvers;
-	CollisionCallback on_collision;
+	OnCollision on_collision;
 
     bool apply_gravity = true;
     vector3 global_gravity = vector3{ 0, -9.81f, 0 };

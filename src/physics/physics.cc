@@ -5,12 +5,12 @@
 namespace physics
 {
 
-CollisionPoints NoCollision()
+Collision NoCollision()
 {
 	return {};
 }
 
-CollisionPoints TestCollision
+Collision TestCollision
 (
 	const Shape& lhs_collider, const Transform& lhs_transform,
 	const Shape& rhs_collider, const Transform& rhs_transform
@@ -18,7 +18,7 @@ CollisionPoints TestCollision
  
 void ResolveCollisions(World* world, float dt)
 {
-	auto SolveCollisions = [](const World& world, std::vector<Collision>& collisions, float dt)
+	auto SolveCollisions = [](const World& world, std::vector<CollisionBetween>& collisions, float dt)
 	{
 		for (const Solver& solve : world.solvers)
 		{
@@ -26,14 +26,14 @@ void ResolveCollisions(World* world, float dt)
 		}
 	};
 
-	auto SendCollisionCallbacks = [](const World& world, std::vector<Collision>& collisions, float dt)
+	auto SendCollisionCallbacks = [](const World& world, std::vector<CollisionBetween>& collisions, float dt)
 	{
-		auto call = [](const CollisionCallback& cb, Collision& collision, float dt)
+		auto call = [](const OnCollision& cb, CollisionBetween& collision, float dt)
 		{
 			if (cb) { cb(collision, dt); }
 		};
 
-		for (Collision& collision : collisions)
+		for (CollisionBetween& collision : collisions)
 		{
 			call(world.on_collision, collision, dt);
 			call(collision.a->on_collision, collision, dt);
@@ -41,8 +41,8 @@ void ResolveCollisions(World* world, float dt)
 		}
 	};
 
-	std::vector<Collision> collisions;
-	std::vector<Collision> triggers;
+	std::vector<CollisionBetween> collisions;
+	std::vector<CollisionBetween> triggers;
 
 	// todo(Gustav): reduce the N*M complexity
 	for (Object* a : world->objects)
@@ -55,18 +55,18 @@ void ResolveCollisions(World* world, float dt)
 				break;
 			}
 
-			CollisionPoints points = TestCollision(a->shape, a->transform, b->shape, b->transform);
+			Collision collision = TestCollision(a->shape, a->transform, b->shape, b->transform);
 
-			if (points.has_collision)
+			if (collision.has_collision)
 			{
 				const auto any_is_trigger = a->is_trigger || b->is_trigger;
 				if (any_is_trigger)
 				{
-					triggers.emplace_back(Collision{a, b, points});
+					triggers.emplace_back(CollisionBetween{a, b, collision});
 				}
 				else
 				{
-					collisions.emplace_back(Collision{a, b, points});
+					collisions.emplace_back(CollisionBetween{a, b, collision});
 				}
 			}
 		}
@@ -125,7 +125,7 @@ void Step(World* world, float dt)
 	MoveObjects(world, dt);
 }
 
-CollisionPoints CreateCollision(const vector3& A, const vector3& B)
+Collision CreateCollision(const vector3& A, const vector3& B)
 {
 	const auto AtoB = B - A;
 	const auto len = glm::length(AtoB);
@@ -141,7 +141,7 @@ CollisionPoints CreateCollision(const vector3& A, const vector3& B)
 
 namespace algo
 {
-	CollisionPoints FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb)
+	Collision FindSphereSphereCollisionPoints(const Sphere& a, const Transform& ta, const Sphere& b, const Transform& tb)
 	{
 		const vector3 A = a.center + ta.position;
 		const vector3 B = b.center + tb.position;
@@ -163,7 +163,7 @@ namespace algo
 		return CreateCollision(nA, nB);
 	}
 
-	CollisionPoints FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb)
+	Collision FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb)
 	{
 		const auto A  = a.center + ta.position;
 		const auto Ar = a.radius * ta.scale;
@@ -187,31 +187,29 @@ namespace algo
 
 namespace forwarders
 {
-	CollisionPoints TestCollision(const Sphere& self, const Transform& transform, const Sphere& sphere, const Transform& sphereTransform)
+	Collision TestCollision(const Sphere& self, const Transform& transform, const Sphere& sphere, const Transform& sphereTransform)
 	{
 		return algo::FindSphereSphereCollisionPoints(self, transform, sphere, sphereTransform);
 	}
 
-	CollisionPoints TestCollision(const Sphere& self, const Transform& transform, const Plane& plane, const Transform& planeTransform)
+	Collision TestCollision(const Sphere& self, const Transform& transform, const Plane& plane, const Transform& planeTransform)
 	{
 		return algo::FindSpherePlaneCollisionPoints(self, transform, plane, planeTransform);
 	}
 
-	CollisionPoints TestCollision(const Plane& self, const Transform& transform, const Sphere& sphere, const Transform& sphereTransform)
+	Collision TestCollision(const Plane& self, const Transform& transform, const Sphere& sphere, const Transform& sphereTransform)
 	{
 		// reuse sphere code
-		CollisionPoints points = TestCollision(sphere, sphereTransform, self, transform);
+		Collision collision = TestCollision(sphere, sphereTransform, self, transform);
 
-		vector3 T = points.a; // You could have an algo Plane v Sphere to do the swap
-		points.a = points.b;
-		points.b = T;
+		// You could have an algo Plane v Sphere to do the swap
+		std::swap(collision.a, collision.b);
+		collision.normal = -collision.normal;
 
-		points.normal = -points.normal;
-
-		return points;
+		return collision;
 	}
 
-	CollisionPoints TestCollision(const Plane& self, const Transform& transform, const Plane& plane, const Transform& planeTransform)
+	Collision TestCollision(const Plane& self, const Transform& transform, const Plane& plane, const Transform& planeTransform)
 	{
 		return NoCollision();
 	}
@@ -221,13 +219,13 @@ template<class> inline constexpr bool always_false_v = false;
 
 namespace intermediate
 {
-	CollisionPoints TestCollision
+	Collision TestCollision
 	(
 		const Sphere& lhs_collider, const Transform& lhs_transform,
 		const Shape& rhs_collider, const Transform& rhs_transform
 	)
 	{
-		return std::visit([&](const auto& rhs) -> CollisionPoints
+		return std::visit([&](const auto& rhs) -> Collision
 			{
 				using T = std::decay_t<decltype(rhs)>;
 				if constexpr (std::is_same_v<T, Sphere>)
@@ -249,13 +247,13 @@ namespace intermediate
 			}, rhs_collider);
 	}
 
-	CollisionPoints TestCollision
+	Collision TestCollision
 	(
 		const Plane& lhs_collider, const Transform& lhs_transform,
 		const Shape& rhs_collider, const Transform& rhs_transform
 	)
 	{
-		return std::visit([&](const auto& rhs) -> CollisionPoints
+		return std::visit([&](const auto& rhs) -> Collision
 			{
 				using T = std::decay_t<decltype(rhs)>;
 				if constexpr (std::is_same_v<T, Sphere>)
@@ -278,13 +276,13 @@ namespace intermediate
 	}
 }
 
-CollisionPoints TestCollision
+Collision TestCollision
 (
 	const Shape& lhs_collider, const Transform& lhs_transform,
 	const Shape& rhs_collider, const Transform& rhs_transform
 )
 {
-	return std::visit([&](const auto& lhs) -> CollisionPoints
+	return std::visit([&](const auto& lhs) -> Collision
 	{
 		using T = std::decay_t<decltype(lhs)>;
 		if constexpr (std::is_same_v<T, Sphere>)
@@ -308,9 +306,9 @@ CollisionPoints TestCollision
 
 
 
-void ImpulseSolver(std::vector<Collision>& collisions, float dt)
+void ImpulseSolver(std::vector<CollisionBetween>& collisions, float dt)
 {
-	for (Collision& coll : collisions)
+	for (CollisionBetween& coll : collisions)
 	{
 		// Replaces non dynamic objects with default values.
 
@@ -320,7 +318,7 @@ void ImpulseSolver(std::vector<Collision>& collisions, float dt)
 		glm::vec3 aVel = aBody ? aBody->velocity : glm::vec3(0.0f);
 		glm::vec3 bVel = bBody ? bBody->velocity : glm::vec3(0.0f);
 		glm::vec3 rVel = bVel - aVel;
-		float  nSpd = glm::dot(rVel, coll.points.normal);
+		float  nSpd = glm::dot(rVel, coll.collision.normal);
 
 		float aInvMass = aBody ? (1.0f/aBody->mass): 1.0f;
 		float bInvMass = bBody ? (1.0f/bBody->mass): 1.0f;
@@ -338,7 +336,7 @@ void ImpulseSolver(std::vector<Collision>& collisions, float dt)
 
 		float j = -(1.0f + e) * nSpd / (aInvMass + bInvMass);
 
-		glm::vec3 impluse = j * coll.points.normal;
+		glm::vec3 impluse = j * coll.collision.normal;
 
 		if (aBody ? aBody->is_simulated : false)
 		{
@@ -352,9 +350,9 @@ void ImpulseSolver(std::vector<Collision>& collisions, float dt)
 
 		// Friction
 		rVel = bVel - aVel;
-		nSpd = glm::dot(rVel, coll.points.normal);
+		nSpd = glm::dot(rVel, coll.collision.normal);
 
-		glm::vec3 tangent = rVel - nSpd * coll.points.normal;
+		glm::vec3 tangent = rVel - nSpd * coll.collision.normal;
 
 		// safe normalize
 		if (glm::length2(tangent) > 0.0001f)
@@ -396,9 +394,9 @@ void ImpulseSolver(std::vector<Collision>& collisions, float dt)
 }
 
 
-void PositionSolver(std::vector<Collision>& collisions, float dt)
+void PositionSolver(std::vector<CollisionBetween>& collisions, float dt)
 {
-	for (Collision& coll : collisions)
+	for (CollisionBetween& coll : collisions)
 	{
 		Object* aBody = coll.a;
 		Object* bBody = coll.b;
@@ -406,7 +404,7 @@ void PositionSolver(std::vector<Collision>& collisions, float dt)
 		float aStatic = aBody->body.has_value() ? 1.0f : 0.0f;
 		float bStatic = bBody->body.has_value() ? 1.0f : 0.0f;
 
-		auto resolution = coll.points.normal * coll.points.depth / std::max(1.0f, aStatic + bStatic);
+		auto resolution = coll.collision.normal * coll.collision.depth / std::max(1.0f, aStatic + bStatic);
 
 		aBody->transform.position -= resolution * (1.0f - aStatic);
 		bBody->transform.position += resolution * (1.0f - bStatic);
