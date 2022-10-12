@@ -45,9 +45,9 @@ void ResolveCollisions(World* world, float dt)
 	std::vector<Collision> triggers;
 
 	// todo(Gustav): reduce the N*M complexity
-	for (CollisionObject* a : world->objects)
+	for (Object* a : world->objects)
 	{
-		for (CollisionObject* b : world->objects)
+		for (Object* b : world->objects)
 		{
 			if (a == b)
 			{
@@ -86,7 +86,7 @@ void ApplyGravity(World* world)
 		return;
 	}
 
-	for (CollisionObject* object : world->objects)
+	for (Object* object : world->objects)
 	{
 		if (!object->body)
 		{
@@ -105,7 +105,7 @@ void ApplyGravity(World* world)
 
 void MoveObjects(World* world, float dt)
 {
-	for (CollisionObject* object : world->objects)
+	for (Object* object : world->objects)
 	{
 		if (!object->body)
 		{
@@ -400,8 +400,8 @@ void PositionSolver(std::vector<Collision>& collisions, float dt)
 {
 	for (Collision& coll : collisions)
 	{
-		CollisionObject* aBody = coll.a;
-		CollisionObject* bBody = coll.b;
+		Object* aBody = coll.a;
+		Object* bBody = coll.b;
 
 		float aStatic = aBody->body.has_value() ? 1.0f : 0.0f;
 		float bStatic = bBody->body.has_value() ? 1.0f : 0.0f;

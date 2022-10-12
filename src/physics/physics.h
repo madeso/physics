@@ -64,7 +64,7 @@ using Shape = std::variant<Sphere, Plane, NullShape>;
 struct Collision;
 using CollisionCallback = std::function<void(Collision&, float)>;
 
-struct CollisionObject
+struct Object
 {
 	Transform transform;
 	Shape shape = NullShape{};
@@ -87,8 +87,8 @@ CollisionPoints NoCollision();
 
 struct Collision
 {
-    CollisionObject* a;
-    CollisionObject* b;
+    Object* a;
+    Object* b;
     CollisionPoints points;
 };
 
@@ -99,7 +99,7 @@ void PositionSolver(std::vector<Collision>& collisions, float dt);
 
 struct World
 {
-	std::vector<CollisionObject*> objects;
+	std::vector<Object*> objects;
 	std::vector<Solver> solvers;
 	CollisionCallback on_collision;
 
