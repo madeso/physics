@@ -22,7 +22,7 @@ using vector3 = glm::vec3;
 
 struct Transform
 {
-	vector3 position;
+	vector3 position = glm::vec3{0,0,0};
 	float scale = 1.0f;
 	quaternion rotation = glm::quat{1, 0, 0, 0};
 };
@@ -30,14 +30,14 @@ struct Transform
 
 struct Sphere
 {
-	vector3 center;
-	float radius;
+	vector3 center = glm::vec3{0,0,0};
+	float radius = 1.0f;
 };
 
 struct Plane
 {
-	vector3 normal;
-	float distance;
+	vector3 normal = glm::vec3{0,1,0};
+	float distance = 0;
 };
 
 struct NullShape {};
@@ -47,8 +47,8 @@ struct Rigidbody
 {
 	bool is_simulated = true;
 	std::optional<vector3> custom_gravity;
-	vector3 force;    // Net force
-	vector3 velocity;
+	vector3 force = glm::vec3{0,0,0};    // Net force
+	vector3 velocity = glm::vec3{0,0,0};
 
 	float mass = 10.0f;
 	bool takes_gravity = true; // If the rigidbody will take gravity from the world.
@@ -68,7 +68,7 @@ struct Object
 {
 	Transform transform;
 	Shape shape = NullShape{};
-	bool is_trigger;
+	bool is_trigger = false;
 	std::optional<Rigidbody> body; 
 	OnCollision on_collision;
 };
