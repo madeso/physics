@@ -405,13 +405,17 @@ void PositionSolver(std::vector<CollisionBetween>& collisions, float dt)
 		Object* aBody = coll.a;
 		Object* bBody = coll.b;
 
-		float aStatic = aBody->body.has_value() ? 1.0f : 0.0f;
-		float bStatic = bBody->body.has_value() ? 1.0f : 0.0f;
+		float aStatic = aBody->body.has_value() ? 0.0f : 1.0f;
+		float bStatic = bBody->body.has_value() ? 0.0f : 1.0f;
 
 		auto resolution = coll.collision.normal * coll.collision.depth / std::max(1.0f, aStatic + bStatic);
 
-		aBody->transform.position -= resolution * (1.0f - aStatic);
-		bBody->transform.position += resolution * (1.0f - bStatic);
+		aBody->transform.position += resolution * (1.0f - aStatic);
+		bBody->transform.position -= resolution * (1.0f - bStatic);
+
+		// clear forces if there is a collision
+		if (aBody->body) aBody->body->force = glm::vec3{ 0,0,0 };
+		if (bBody->body) bBody->body->force = glm::vec3{ 0,0,0 };
 	}
 }
 
