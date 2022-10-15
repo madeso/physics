@@ -47,9 +47,9 @@ void draw_object(const physics::Object& obj, Color color)
 
     rlPushMatrix();
     // std::cout << p.x << " " << p.y << " " << p.z << "\n";
-    // rlTranslatef(p.x, p.y, p.z);
+    rlTranslatef(p.x, p.y, p.z);
     // rlRotatef(float angle, float x, float y, float z);
-    // rlScalef(s, s,s);
+    rlScalef(s, s,s);
     draw_shape(obj.shape, color);
     rlPopMatrix();
 }

@@ -23,8 +23,8 @@ using vector3 = glm::vec3;
 struct Transform
 {
 	vector3 position;
-	float scale;
-	quaternion rotation;
+	float scale = 1.0f;
+	quaternion rotation = glm::quat{1, 0, 0, 0};
 };
 
 

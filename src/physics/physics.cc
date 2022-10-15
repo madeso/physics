@@ -1,5 +1,8 @@
 #include "physics.h"
+
 #include <type_traits>
+#include <cassert>
+#include <cmath>
 
 
 namespace physics
@@ -165,6 +168,7 @@ namespace algo
 
 	Collision FindSpherePlaneCollisionPoints(const Sphere& a, const Transform& ta, const Plane& b, const Transform& tb)
 	{
+		assert(std::abs(glm::length2(b.normal) - 1) < 0.1f);
 		const auto A  = a.center + ta.position;
 		const auto Ar = a.radius * ta.scale;
 		const auto N = glm::normalize(b.normal * tb.rotation);
